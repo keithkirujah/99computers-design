@@ -1,161 +1,729 @@
-/* 99 COMPUTERS: staff console. Demo data lives in this browser (localStorage). Replace get/set with API calls when a server exists. */
+/* ==========================================================================
+   99 COMPUTERS — ADMIN CONSOLE (token-free client, commits via /api/save)
+   ========================================================================== */
+
 (() => {
-const { $, $$, ic, DB, Auth, modal, toast, openAuth, esc, BRANCHES, SERVICES } = window.N;
-const get = k => DB.get(k, []), set = (k, v) => DB.set(k, v);
-const kes = n => 'KSh ' + Number(n).toLocaleString('en-KE'), D = 864e5, now = Date.now();
-const ago = t => { const m = (Date.now() - t) / 6e4; return m < 60 ? Math.max(1, m | 0) + ' min ago' : m < 1440 ? (m / 60 | 0) + ' h ago' : (m / 1440 | 0) + ' d ago'; };
-const ramp = t => { const S = [[59, 116, 255], [34, 211, 197], [255, 122, 61]], k = Math.min(.999, Math.max(0, t)) * 2, i = k | 0, f = k - i, a = S[i], b = S[i + 1]; return `rgb(${a.map((v, j) => Math.round(v + (b[j] - v) * f)).join(',')})`; };
-const HUE = ['var(--blue)', 'var(--teal)', 'var(--sig)'];
 
-/* seed (sample data, clearly marked in the UI) */
-const SEED = () => {
-  const o = (id, customer, item, branch, amount, pay, status, d) => ({ id, customer, item, branch, amount, pay, status, date: now - d * D });
-  set('orders', [o('85743', 'Wanjiru M.', '4-channel CCTV install', 'Kerugoya', 34999, 'Due', 'Pending', .4), o('97245', 'Brian O.', 'Laptop screen replacement', 'Nairobi CBD', 8500, 'Refunded', 'Declined', 1), o('36452', 'Kamau & Sons', 'Office network setup', 'Nairobi CBD', 42000, 'Paid', 'Active', 1.2), o('41208', 'Grace N.', 'Desktop upgrade (SSD + RAM)', "Murang'a", 12999, 'Paid', 'Completed', 2), o('52981', 'Peter K.', '55" TV wall mount and setup', "Murang'a", 4500, 'Due', 'Pending', 2.3), o('61877', 'Mercy W.', 'Printer and toner supply', 'Kerugoya', 18900, 'Paid', 'Completed', 3), o('72310', 'Daniel M.', '8-channel CCTV kit', 'Nairobi CBD', 69000, 'Paid', 'Active', 4), o('80655', 'Esther A.', 'Business laptop 15.6"', "Murang'a", 54999, 'Paid', 'Completed', 5)]);
-  const s = (sku, name, cat, qty, min, price) => ({ sku, name, cat, qty, min, price });
-  set('stock', [s('CCTV-4', '4-channel CCTV kit', 'CCTV', 12, 5, 34999), s('CCTV-8', '8-channel CCTV kit', 'CCTV', 4, 5, 69000), s('LAP-15', 'Business laptop 15.6"', 'Laptops', 9, 4, 54999), s('AIO-24', 'All-in-one desktop 24"', 'Desktops', 5, 3, 68500), s('TV-55', '55" Smart TV', 'Televisions', 7, 3, 64999), s('CAB-HD', 'HDMI cable 2 m', 'Accessories', 48, 20, 599), s('MOU-W', 'Wireless mouse', 'Accessories', 3, 15, 1200), s('CHG-65', 'USB-C charger 65 W', 'Accessories', 22, 10, 2499), s('SND-BR', 'Sound bar', 'Sound', 6, 3, 17999), s('RTR-AX', 'Wi-Fi 6 router', 'Accessories', 11, 5, 7499)]);
-  set('customers', [{ id: 'c1', name: 'Wanjiru M.', contact: '+254 711 000 111', joined: now - 40 * D }, { id: 'c2', name: 'Kamau & Sons', contact: '+254 722 000 222', joined: now - 25 * D }, { id: 'c3', name: 'Grace N.', contact: '+254 733 000 333', joined: now - 12 * D }, { id: 'c4', name: 'Daniel M.', contact: '+254 744 000 444', joined: now - 6 * D }]);
-  const t = (id, name, service, branch, status, text, d) => ({ id, userId: null, name, email: '', phone: '', service, branch, status, created: now - d * D, thread: [{ from: name, me: false, text, at: now - d * D }] });
-  set('tickets', [...get('tickets'), t('T-1001', 'Wanjiru M.', 'CCTV Installation', 'Kerugoya', 'Open', 'We need two extra cameras added to the shop system.', .5), t('T-1002', 'Kamau & Sons', 'IT Support', 'Nairobi CBD', 'Open', 'Office printer is not visible on the network since Monday.', 1.5), t('T-1003', 'Grace N.', 'Computer Sales', "Murang'a", 'Closed', 'Asked about the price of a 24 inch all-in-one.', 6)]);
-  DB.set('seeded', 1);
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const kes = n => 'KSh ' + Number(n).toLocaleString('en-KE');
+const eff = p => p.sale && p.sale < p.price ? p.sale : p.price;
+const CATICON = { Laptops: 'device-laptop', Desktops: 'device-desktop', Televisions: 'device-tv', Phones: 'device-mobile', CCTV: 'device-cctv', Printers: 'printer', Sound: 'device-speaker', Appliances: 'wash-machine', Accessories: 'usb' };
+const ic = name => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+
+const toast = m => {
+  let t = $('.toast');
+  if (!t) { t = document.createElement('div'); t.className = 'toast glass'; t.setAttribute('role', 'status'); document.body.append(t); }
+  t.textContent = m; t.classList.add('on');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 3000);
 };
-if (!DB.get('seeded', 0)) SEED();
 
-const S = { oq: '', of: 'All', sq: '', range: '7D', tf: 'All', tid: null };
-const OS = { Pending: 'p', Active: 'b', Completed: 'a', Declined: 'd' }, PS = { Paid: 'a', Due: 'p', Refunded: 'd' };
-const kpi = (i, h, l, v) => `<article class="glass card kpi s3"><span class="ico" style="--h:${h}">${ic(i)}</span><h3>${l}</h3><b>${v}</b></article>`;
+const mem = {};
+const DB = {
+  get(k, d) { try { const v = localStorage.getItem('n99.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return k in mem ? mem[k] : d; } },
+  set(k, v) { try { localStorage.setItem('n99.' + k, JSON.stringify(v)); } catch (e) { mem[k] = v; } }
+};
 
-/* charts */
-const bars = (labels, vals, unit) => { const W = 440, H = 190, bw = Math.min(40, 300 / vals.length), mx = Math.max(...vals, 1) * 1.12, gap = (W - vals.length * bw) / (vals.length + 1);
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Bar chart: ${labels.map((l, i) => l + ' ' + vals[i]).join(', ')}">` + [0, 1, 2, 3].map(k => `<line class="gl" x1="0" x2="${W}" y1="${8 + k * 50}" y2="${8 + k * 50}"/>`).join('') +
-  vals.map((v, i) => { const h = Math.max(2, (H - 30) * v / mx), x = gap + i * (bw + gap); return `<rect class="b" x="${x}" y="${H - 22 - h}" width="${bw}" height="${h}" rx="7" fill="${ramp(v / mx)}" style="animation-delay:${i * .04}s"><title>${labels[i]}: ${unit}${v.toLocaleString()}</title></rect><text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle">${labels[i]}</text>`; }).join('') + '</svg></div>'; };
-const line = (a, b, labels) => { const W = 440, H = 190, P = (arr) => arr.map((v, i) => [20 + i * (W - 40) / (arr.length - 1), H - 28 - (H - 50) * v / 100]), sm = p => p.map((q, i) => i ? `C${(p[i - 1][0] + q[0]) / 2},${p[i - 1][1]} ${(p[i - 1][0] + q[0]) / 2},${q[1]} ${q[0]},${q[1]}` : `M${q[0]},${q[1]}`).join('');
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Sales against target by month"><defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22d3c5" stop-opacity=".45"/><stop offset="1" stop-color="#22d3c5" stop-opacity="0"/></linearGradient></defs>` + [0, 1, 2, 3].map(k => `<line class="gl" x1="0" x2="${W}" y1="${8 + k * 45}" y2="${8 + k * 45}"/>`).join('') +
-  `<path d="${sm(P(a))} L${W - 20},${H - 28} L20,${H - 28}Z" fill="url(#ag)" stroke="none"/><path d="${sm(P(b))}" stroke="var(--mute)" stroke-width="2" stroke-dasharray="5 5"/><path d="${sm(P(a))}" stroke="var(--teal)" stroke-width="3" stroke-linecap="round"/>` + labels.map((m, i) => i % 2 === 0 ? `<text x="${20 + i * (W - 40) / (labels.length - 1)}" y="${H - 5}" text-anchor="middle">${m}</text>` : '').join('') + '</svg></div>'; };
-const donut = (parts, total, centre) => { const C = 2 * Math.PI * 60; let off = 0; return `<div class="donut"><svg viewBox="0 0 160 160" role="img" aria-label="Orders by branch"><circle cx="80" cy="80" r="60" stroke="var(--line)" stroke-width="18"/>` + parts.map((p, i) => { const l = total ? C * p[1] / total : 0, s = `<circle cx="80" cy="80" r="60" stroke="${HUE[i % 3]}" stroke-width="18" stroke-dasharray="${l} ${C - l}" stroke-dashoffset="${-off}" transform="rotate(-90 80 80)"><title>${p[0]}: ${kes(p[1])}</title></circle>`; off += l; return s; }).join('') + `<text x="80" y="86" text-anchor="middle" style="font:700 22px Sora,sans-serif;fill:var(--ink)">${centre}</text></svg><ul class="list" style="flex:1;min-width:160px">${parts.map((p, i) => `<li><i style="width:10px;height:10px;border-radius:3px;background:${HUE[i % 3]}"></i><span>${esc(p[0])}</span><b class="end">${kes(p[1])}</b></li>`).join('')}</ul></div>`; };
-const meter = (v, max) => `<div style="height:8px;border-radius:8px;background:var(--fill);overflow:hidden"><i style="display:block;height:100%;width:${Math.round(100 * v / Math.max(1, max))}%;border-radius:8px;background:linear-gradient(90deg,var(--teal),var(--sig))"></i></div>`;
+const root = document.documentElement;
+const themeBtn = $('#themeToggle');
+if (themeBtn && !themeBtn.dataset.wired) {
+  themeBtn.dataset.wired = '1';
+  themeBtn.addEventListener('click', () => {
+    const n = root.dataset.theme === 'light' ? 'dark' : 'light';
+    root.dataset.theme = n;
+    try { localStorage.setItem('theme', n); } catch (e) {}
+    const meta = $('meta[name=theme-color]');
+    if (meta) meta.content = n === 'light' ? '#eaf1ff' : '#050b1a';
+  });
+}
 
-/* views */
-const V = {
-  overview() {
-    const o = get('orders'), st = get('stock'), tk = get('tickets'), us = Auth.users(), low = st.filter(s => s.qty <= s.min);
-    const rev = o.filter(x => x.pay === 'Paid').reduce((a, x) => a + x.amount, 0), openO = o.filter(x => ['Pending', 'Active'].includes(x.status)).length, openT = tk.filter(t => t.status === 'Open').length;
-    const lab = [], val = []; for (let i = 6; i >= 0; i--) { const d0 = new Date(now - i * D); d0.setHours(0, 0, 0, 0); const a = d0.getTime(); lab.push(d0.toLocaleDateString('en-GB', { weekday: 'short' })); val.push(Math.round(o.filter(x => x.date >= a && x.date < a + D).reduce((s, x) => s + x.amount, 0) / 1000)); }
-    const br = BRANCHES.map(b => [b, o.filter(x => x.branch === b).reduce((s, x) => s + x.amount, 0)]);
-    return `<div class="dash">${kpi('coin', HUE[0], 'Revenue (paid)', kes(rev))}${kpi('receipt-2', HUE[1], 'Open orders', openO)}${kpi('mail', HUE[2], 'Open tickets', openT)}${kpi('package', HUE[2], 'Low stock items', low.length)}
-    <article class="glass card s7"><div class="hd"><h2>Sales, last 7 days</h2><small>KSh thousands</small></div>${bars(lab, val, 'KSh ')}</article>
-    <article class="glass card s5"><div class="hd"><h2>Orders by branch</h2></div>${donut(br, br.reduce((a, b) => a + b[1], 0), o.length + ' orders')}</article>
-    <article class="glass card s8"><div class="hd"><h2>Recent orders</h2><a class="btn sm" href="#orders">View all</a></div><div class="tw"><table><thead><tr><th>Ref</th><th>Customer</th><th>Item</th><th>Amount</th><th>Status</th></tr></thead><tbody>${[...o].sort((a, b) => b.date - a.date).slice(0, 5).map(x => `<tr><td>#${x.id}</td><td>${esc(x.customer)}</td><td>${esc(x.item)}</td><td>${kes(x.amount)}</td><td><span class="st ${OS[x.status]}">${x.status}</span></td></tr>`).join('')}</tbody></table></div></article>
-    <article class="glass card s4"><div class="hd"><h2>Low stock</h2><a class="btn sm" href="#stock">Stock</a></div><ul class="list">${low.map(s => `<li><div><b>${esc(s.name)}</b><small>${s.qty} left, minimum ${s.min}</small></div><span class="st p end">Low</span></li>`).join('') || '<li>All stock levels are healthy.</li>'}</ul></article>
-    <article class="glass card s7"><div class="hd"><h2>Latest tickets</h2><a class="btn sm" href="#tickets">Open tickets</a></div><ul class="list">${[...tk].sort((a, b) => b.created - a.created).slice(0, 3).map(t => `<li><div><b>${esc(t.service)}</b><small>${esc(t.name)}, ${esc(t.branch)} · ${ago(t.created)}</small></div><span class="st ${t.status === 'Open' ? 'p' : 'a'} end">${t.status}</span></li>`).join('') || '<li>No tickets yet.</li>'}</ul></article>
-    <article class="glass card s5"><div class="hd"><h2>Newest accounts</h2><a class="btn sm" href="#customers">Customers</a></div><ul class="list">${[...us].reverse().slice(0, 4).map(u => `<li><span class="av">${esc(u.name[0]).toUpperCase()}</span><div><b>${esc(u.name)}</b><small>${esc(u.role)} · ${ago(u.created)}</small></div></li>`).join('') || '<li>No accounts yet.</li>'}</ul></article></div>`;
+function modal(html, cls = '') {
+  const el = document.createElement('div'); el.className = 'modal';
+  el.innerHTML = `<div class="panel glass ${cls}" role="dialog" aria-modal="true">${html}</div>`;
+  document.body.append(el);
+  const prev = document.activeElement; let done = false, cb = null;
+  const key = e => {
+    if (el !== [...document.querySelectorAll('.modal')].pop()) return;
+    if (e.key === 'Escape') close();
+    if (e.key === 'Tab') {
+      const f = $$('button,input,select,textarea,a[href]', el).filter(x => !x.disabled && x.offsetParent);
+      if (!f.length) return;
+      const a = f[0], z = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    }
+  };
+  function close() {
+    if (done) return; done = true;
+    el.classList.remove('on');
+    setTimeout(() => el.remove(), 400);
+    document.removeEventListener('keydown', key);
+    if (prev && prev.focus) prev.focus();
+    if (cb) cb();
+  }
+  document.addEventListener('keydown', key);
+  el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-close]')) close(); });
+  requestAnimationFrame(() => {
+    el.classList.add('on');
+    const f = $('input,select,textarea', el) || $('button', el);
+    if (f) f.focus();
+  });
+  return { el, close, on: fn => { cb = fn; } };
+}
+
+const urlCache = {};
+async function imgSrc(ref) {
+  if (!ref) return '';
+  if (!ref.startsWith('idb:')) return ref;
+  if (urlCache[ref]) return urlCache[ref];
+  try {
+    const b = await new Promise((res, rej) => {
+      const r = indexedDB.open('n99img', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('i');
+      r.onsuccess = () => {
+        const tx = r.result.transaction('i', 'readonly');
+        const req = tx.objectStore('i').get(ref.slice(4));
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej(req.error);
+      };
+      r.onerror = () => rej(r.error);
+    });
+    return b ? (urlCache[ref] = URL.createObjectURL(b)) : '';
+  } catch (e) { return ''; }
+}
+function hydrate(rootEl) {
+  $$('img[data-ref]', rootEl).forEach(async im => {
+    const wrap = im.closest('.pimg,.tn,.thumbimg,.main');
+    im.addEventListener('load', () => { wrap?.classList.remove('failed'); wrap?.classList.add('loaded'); }, { once: true });
+    im.addEventListener('error', () => { if (im.getAttribute('src')) wrap?.classList.add('failed'); }, { once: true });
+    const s = await imgSrc(im.dataset.ref);
+    if (s) im.src = s;
+    else wrap?.classList.add('failed');
+  });
+}
+
+/* ----------------------------- CONFIG ----------------------------- */
+const OWNER = 'keithkirujah';
+const REPO  = '99computers';
+const BRANCH = 'main';
+const CATALOG_PATH = 'catalog.json';
+const LOG_PATH = 'data/log.json';
+const IMAGES_DIR = 'images/shop';
+const ROLE_KEY  = 'n99.console.role';
+let CURRENT_ROLE = 'staff';
+let CURRENT_USER = '';
+
+const BASE_CATS = ['Laptops', 'Desktops', 'Televisions', 'Phones', 'CCTV', 'Printers', 'Sound', 'Appliances', 'Accessories'];
+
+
+/* ---------------------- GH CLIENT (NO TOKEN) ---------------------- */
+/* Reads  : direct to public GitHub API (no token needed, repo is public)
+   Writes : POST to /api/save  →  server uses GITHUB_TOKEN from Vercel   */
+const gh = {
+  headers() {
+    return { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
   },
-  orders() {
-    return `<div class="glass card"><div class="tools"><label class="srch">${ic('search')}<input id="oq" type="search" placeholder="Search orders" aria-label="Search orders" value="${esc(S.oq)}"></label><select class="sel" id="of" aria-label="Filter by status">${['All', 'Pending', 'Active', 'Completed', 'Declined'].map(s => `<option${s === S.of ? ' selected' : ''}>${s}</option>`).join('')}</select><button class="btn p sm" data-a="onew" type="button" style="margin-left:auto">${ic('plus')}New order</button></div><div class="tw"><table><thead><tr><th>Ref</th><th>Customer</th><th>Item</th><th>Branch</th><th>Amount</th><th>Payment</th><th>Status</th><th><span class="sr" style="position:absolute;left:-9999px">Actions</span></th></tr></thead><tbody id="tb">${V.orows()}</tbody></table></div></div>`;
+
+  async call(path) {
+    const url = 'https://api.github.com/repos/' + OWNER + '/' + REPO + path;
+    const r = await fetch(url, { headers: this.headers() });
+    if (r.status === 404) throw Object.assign(Error('File or repo not found'), { status: 404 });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(Error(j.message || 'GitHub request failed'), { status: r.status });
+    return j;
   },
-  orows() {
-    const q = S.oq.toLowerCase();
-    return get('orders').filter(x => (S.of === 'All' || x.status === S.of) && (x.customer + x.item + x.id + x.branch).toLowerCase().includes(q)).sort((a, b) => b.date - a.date).map(x => `<tr><td>#${x.id}</td><td>${esc(x.customer)}</td><td>${esc(x.item)}</td><td>${esc(x.branch)}</td><td>${kes(x.amount)}</td><td><span class="st ${PS[x.pay]}">${x.pay}</span>${x.pay === 'Due' ? ` <button class="ab" data-a="paid" data-id="${x.id}" aria-label="Mark order ${x.id} as paid" title="Mark paid">${ic('check')}</button>` : ''}</td><td><select class="sel" data-a="ost" data-id="${x.id}" aria-label="Status for order ${x.id}">${Object.keys(OS).map(s => `<option${s === x.status ? ' selected' : ''}>${s}</option>`).join('')}</select></td><td><button class="ab" data-a="odel" data-id="${x.id}" aria-label="Delete order ${x.id}">${ic('trash')}</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">No orders match.</td></tr>';
+
+  async readFile(path) {
+    try {
+      const j = await this.call('/contents/' + encodeURIComponent(path) + '?ref=' + BRANCH);
+      const content = decodeURIComponent(escape(atob(j.content.replace(/\n/g, ''))));
+      return { sha: j.sha, content };
+    } catch (e) { if (e.status === 404) return null; throw e; }
   },
-  customers() {
-    const me = Auth.current(), us = Auth.users(), rows = [...us.map(u => ({ n: u.name, c: u.email + ' · ' + u.phone, src: 'Account', role: u.role, id: u.id, at: u.created })), ...get('customers').map(c => ({ n: c.name, c: c.contact, src: 'Walk-in', role: '', id: c.id, at: c.joined }))].sort((a, b) => b.at - a.at);
-    return `<div class="glass card"><div class="hd"><h2>Customers and accounts</h2><small>${us.length} account${us.length === 1 ? '' : 's'}</small></div><div class="tw"><table><thead><tr><th>Name</th><th>Contact</th><th>Source</th><th>Role</th><th>Joined</th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${esc(r.n)}</b></td><td>${esc(r.c)}</td><td><span class="st ${r.src === 'Account' ? 'b' : 'a'}">${r.src}</span></td><td>${!r.role ? '<small>None</small>' : me.role === 'owner' && r.role !== 'owner' ? `<select class="sel" data-a="role" data-id="${r.id}" aria-label="Role for ${esc(r.n)}">${['customer', 'staff'].map(x => `<option${x === r.role ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span class="role" style="margin:0">${esc(r.role)}</span>`}</td><td>${ago(r.at)}</td></tr>`).join('')}</tbody></table></div></div>`;
+
+  async readPreviousFile(path) {
+    try {
+      const commits = await this.call('/commits?path=' + encodeURIComponent(path) + '&per_page=2');
+      if (commits.length < 2) return null;
+      const prevSha = commits[1].sha;
+      const j = await this.call('/contents/' + encodeURIComponent(path) + '?ref=' + prevSha);
+      const content = decodeURIComponent(escape(atob(j.content.replace(/\n/g, ''))));
+      return { sha: j.sha, content };
+    } catch (e) { return null; }
   },
-  analytics() {
-    const SER = { '7D': [['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], [48, 62, 55, 71, 90, 84, 39]], '30D': [['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4'], [310, 402, 365, 448]], '12M': [['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], [1210, 1380, 1290, 1560, 1410, 1620, 1700, 1580, 1840, 1760, 0, 0]] };
-    const [l, v] = SER[S.range], o = get('orders'), tk = get('tickets'), br = BRANCHES.map(b => [b, o.filter(x => x.branch === b).reduce((s, x) => s + x.amount, 0)]);
-    const sv = SERVICES.map(s => [s, tk.filter(t => t.service === s).length]).filter(x => x[1]).sort((a, b) => b[1] - a[1]);
-    return `<div class="dash"><article class="glass card s7"><div class="hd"><h2>Sales</h2><div class="tabs" role="group" aria-label="Range">${['7D', '30D', '12M'].map(r => `<button type="button" data-a="range" data-r="${r}" aria-pressed="${r === S.range}">${r}</button>`).join('')}</div></div>${bars(l, v.map(x => x), 'KSh thousand ')}<p class="hint" style="margin-top:10px">Sample figures in KSh thousands. Orders recorded here feed the other charts.</p></article>
-    <article class="glass card s5"><div class="hd"><h2>Sales against target</h2><span class="legend"><span><i style="background:var(--teal)"></i>Sales</span><span><i style="background:var(--mute)"></i>Target</span></span></div>${line([42, 58, 51, 76, 49, 63, 70, 66], [50, 55, 60, 65, 70, 75, 80, 82], ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'])}</article>
-    <article class="glass card s6"><div class="hd"><h2>Revenue by branch</h2><small>From recorded orders</small></div>${donut(br, br.reduce((a, b) => a + b[1], 0), kes(br.reduce((a, b) => a + b[1], 0)).replace('KSh ', ''))}</article>
-    <article class="glass card s6"><div class="hd"><h2>Tickets by service</h2><small>From recorded tickets</small></div><ul class="list">${sv.map(s => `<li style="flex-direction:column;align-items:stretch;gap:8px"><span style="display:flex;justify-content:space-between"><b>${esc(s[0])}</b><span>${s[1]}</span></span>${meter(s[1], sv[0][1])}</li>`).join('') || '<li>No tickets yet.</li>'}</ul></article></div>`;
+
+  /* Plain-text write — requires a valid server-issued session cookie */
+  async writeFile(path, content, message) {
+    const r = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content, message, binary: false })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Error(j.error || 'Save failed');
+    return j;
   },
-  tickets() {
-    const tk = get('tickets').filter(t => S.tf === 'All' || t.status === S.tf).sort((a, b) => b.created - a.created), t = get('tickets').find(x => x.id === S.tid) || tk[0];
-    if (t) S.tid = t.id;
-    return `<div class="tk"><div class="glass card"><div class="hd"><h2>Tickets</h2><div class="tabs" role="group" aria-label="Filter">${['All', 'Open', 'Closed'].map(f => `<button type="button" data-a="tf" data-f="${f}" aria-pressed="${f === S.tf}">${f}</button>`).join('')}</div></div><ul class="list">${tk.map(x => `<li role="button" tabindex="0" data-a="tsel" data-id="${x.id}" aria-selected="${x.id === S.tid}"><div><b>${esc(x.service)}</b><small>${esc(x.name)} · ${ago(x.created)}</small></div><span class="st ${x.status === 'Open' ? 'p' : 'a'} end">${x.status}</span></li>`).join('') || '<li>No tickets.</li>'}</ul></div>
-    <div class="glass card">${t ? `<div class="hd"><div><h2>${esc(t.service)}</h2><small>${t.id} · ${esc(t.branch)} · ${esc(t.name)} ${t.phone ? '· ' + esc(t.phone) : ''}</small></div><button class="btn sm" type="button" data-a="tclose" data-id="${t.id}">${t.status === 'Open' ? 'Close ticket' : 'Reopen'}</button></div><div class="thread">${t.thread.map(m => `<div class="msg ${m.me ? 'me' : ''}"><small>${esc(m.from)} · ${ago(m.at)}</small>${esc(m.text)}</div>`).join('')}</div><form id="rf" novalidate><div class="fld"><label for="rt">Reply</label><textarea id="rt" name="text" placeholder="Write a reply"></textarea></div><button class="btn p sm" type="submit">${ic('send')}Send reply</button></form>` : '<div class="empty">Select a ticket to see the conversation.</div>'}</div></div>`;
-  },
-  stock() {
-    return `<div class="glass card"><div class="tools"><label class="srch">${ic('search')}<input id="sq" type="search" placeholder="Search stock" aria-label="Search stock" value="${esc(S.sq)}"></label><button class="btn p sm" data-a="snew" type="button" style="margin-left:auto">${ic('plus')}Add item</button></div><div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th>Quantity</th><th>Minimum</th><th>Price</th><th>Level</th><th></th></tr></thead><tbody id="tb">${V.srows()}</tbody></table></div></div>`;
-  },
-  srows() {
-    const q = S.sq.toLowerCase();
-    return get('stock').filter(s => (s.sku + s.name + s.cat).toLowerCase().includes(q)).map(s => `<tr class="${s.qty <= s.min ? 'low' : ''}"><td>${esc(s.sku)}</td><td><b>${esc(s.name)}</b></td><td>${esc(s.cat)}</td><td><span class="qty"><button class="ab" data-a="q-" data-id="${esc(s.sku)}" aria-label="Decrease ${esc(s.name)}">${ic('minus')}</button><b>${s.qty}</b><button class="ab" data-a="q+" data-id="${esc(s.sku)}" aria-label="Increase ${esc(s.name)}">${ic('plus')}</button></span></td><td>${s.min}</td><td>${kes(s.price)}</td><td><span class="st ${s.qty <= s.min ? 'p' : 'a'}">${s.qty <= s.min ? 'Low' : 'OK'}</span></td><td><button class="ab" data-a="sdel" data-id="${esc(s.sku)}" aria-label="Delete ${esc(s.name)}">${ic('trash')}</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">No items match.</td></tr>';
-  },
-  settings() {
-    const u = Auth.current();
-    return `<div class="dash"><article class="glass card s6"><div class="hd"><h2>Your profile</h2><span class="role" style="margin:0">${esc(u.role)}</span></div><form id="pf" novalidate><div class="fld"><label for="p-n">Full name</label><input id="p-n" name="name" value="${esc(u.name)}"></div><div class="fld"><label for="p-e">Email</label><input id="p-e" value="${esc(u.email)}" disabled></div><div class="fld"><label for="p-p">Phone</label><input id="p-p" name="phone" value="${esc(u.phone)}"></div><button class="btn p sm" type="submit">Save changes</button></form></article>
-    <article class="glass card s6"><div class="hd"><h2>Business</h2></div><ul class="list"><li>${ic('clock')}<div><b>Opening hours</b><small>Monday to Saturday, 08:00 to 18:00</small></div></li><li>${ic('phone')}<div><b>Phone and WhatsApp</b><small>+254 794 707 522</small></div></li><li>${ic('map-pin')}<div><b>Branches</b><small>${BRANCHES.join(', ')}</small></div></li></ul></article>
-    <article class="glass card s12"><div class="hd"><h2>Data and session</h2></div><div class="btns"><button class="btn" type="button" data-a="export">${ic('download')}Export data</button>${u.role === 'owner' ? `<button class="btn" type="button" data-a="reset">${ic('refresh')}Reset demo data</button>` : ''}<button class="btn" type="button" data-a="signout">${ic('logout')}Sign out</button></div><p class="hint" style="margin-top:14px">Exports orders, stock, customers and tickets. Account passwords are never exported.</p></article></div>`;
+
+  /* Binary write — content is already base64 (e.g. image) */
+  async writeBinary(path, base64, message) {
+    const r = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content: base64, message, binary: true })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Error(j.error || 'Upload failed');
+    return j;
   }
 };
-const TITLES = { overview: 'Overview', orders: 'Orders', customers: 'Customers', analytics: 'Analytics', tickets: 'Tickets', stock: 'Stock', settings: 'Settings' };
 
-/* shell + gate */
-const view = $('#view'), shell = $('#shell'), gate = $('#gate');
-function badge() { const n = get('tickets').filter(t => t.status === 'Open').length, b = $('#tb-n'); b.textContent = n; b.hidden = !n; }
+/* ---------------------------- COMPRESS ---------------------------- */
+async function compress(file, max = 1400, q = 0.84) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * k));
+  c.height = Math.max(1, Math.round(bmp.height * k));
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', q));
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+/* ------------------------------ GATE ------------------------------ */
+/* Authentication is verified by /api/auth. No credentials or roles are trusted from browser storage. */
+async function gate() {
+  const el = document.getElementById('gate');
+  el.hidden = false;
+  document.getElementById('shell').hidden = true;
+
+  try {
+    const existing = await fetch('/api/auth', { credentials: 'same-origin', cache: 'no-store' });
+    const state = await existing.json().catch(() => ({}));
+    if (existing.ok && state.authenticated) {
+      CURRENT_ROLE = state.role;
+      CURRENT_USER = state.user;
+      DB.set(ROLE_KEY, CURRENT_ROLE);
+      return true;
+    }
+  } catch (e) { /* show login form below */ }
+
+  return new Promise(resolve => {
+    el.innerHTML = `<form class="glass card" id="pg" novalidate style="max-width:420px;width:100%;padding:36px;text-align:center">
+      <span class="ico" style="--h:var(--teal);margin:0 auto 18px">${ic('lock') || '🔒'}</span>
+      <h1 style="font-size:26px;margin-bottom:8px">Staff console</h1>
+      <p class="sub2" style="color:var(--mute);margin-bottom:20px">Sign in with your assigned staff account.</p>
+      <div class="fld" style="text-align:left"><label for="p-user">Username</label><input id="p-user" name="username" type="text" autocomplete="username" required maxlength="120"></div>
+      <div class="fld" style="text-align:left"><label for="p-pass">Password</label><input id="p-pass" name="password" type="password" autocomplete="current-password" required maxlength="1024"></div>
+      <p id="login-error" class="hint" role="alert" hidden></p>
+      <button class="btn p" id="login-submit" type="submit" style="width:100%;margin-top:12px">Log in securely</button>
+      <p class="hint" style="margin-top:16px">Account access is managed by the site administrator.</p>
+    </form>`;
+    const f = $('#pg', el);
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const button = $('#login-submit', f), error = $('#login-error', f);
+      button.disabled = true; button.textContent = 'Signing in…'; error.hidden = true;
+      const d = Object.fromEntries(new FormData(f));
+      try {
+        const r = await fetch('/api/auth', {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: d.username, password: d.password })
+        });
+        const result = await r.json().catch(() => ({}));
+        if (!r.ok || !result.authenticated) throw Error(result.error || 'Sign-in failed.');
+        CURRENT_ROLE = result.role;
+        CURRENT_USER = result.user;
+        DB.set(ROLE_KEY, CURRENT_ROLE);
+        resolve(true);
+      } catch (err) {
+        error.textContent = err.message || 'Unable to sign in.';
+        error.hidden = false;
+        button.disabled = false; button.textContent = 'Log in securely';
+      }
+    });
+  });
+}
+
+/* ----------------------------- STATE ----------------------------- */
+const S = { products: [], cats: [], logs: [], view: 'overview' };
+
+async function loadCatalog() {
+  try {
+    const file = await gh.readFile(CATALOG_PATH);
+    if (file) {
+      const j = JSON.parse(file.content);
+      S.products = Array.isArray(j.products) ? j.products : [];
+      S.cats = Array.isArray(j.categories) ? j.categories : [];
+    } else { S.products = []; S.cats = []; }
+
+    const logFile = await gh.readFile(LOG_PATH);
+    if (logFile) S.logs = JSON.parse(logFile.content) || [];
+  } catch (e) { toast('Could not load catalog: ' + e.message); S.products = []; S.cats = []; }
+}
+
+/* -------------------------- BATCH SAVING -------------------------- */
+let saveTimeout = null;
+let countdownInterval = null;
+let timeLeft = 0;
+let pendingMsg = '';
+
+function queueSave(msg) {
+  clearTimeout(saveTimeout);
+  clearInterval(countdownInterval);
+  pendingMsg = msg;
+  timeLeft = 60;
+
+  let syncEl = $('#sync');
+  if (!syncEl) {
+    syncEl = document.createElement('span');
+    syncEl.id = 'sync';
+    syncEl.className = 'pill2';
+    $('.top').insertBefore(syncEl, $('.top').children[1]);
+  }
+  syncEl.hidden = false;
+  syncEl.style.background = 'var(--sig-t)';
+  syncEl.style.color = '#1a0d05';
+
+  const updateCountdown = () => {
+    syncEl.textContent = `Saving in ${timeLeft}s...`;
+    if (timeLeft <= 0) clearInterval(countdownInterval);
+    timeLeft--;
+  };
+  updateCountdown();
+  countdownInterval = setInterval(updateCountdown, 1000);
+
+  saveTimeout = setTimeout(async () => {
+    clearInterval(countdownInterval);
+    syncEl.textContent = 'Publishing...';
+    syncEl.style.background = 'var(--gl2)';
+    syncEl.style.color = 'var(--ink)';
+
+    try {
+      const uniqueProducts = [];
+      const seenNames = new Set();
+      const sorted = [...S.products].sort((a, b) => (b.created || 0) - (a.created || 0));
+      for (const p of sorted) {
+        const key = p.name.trim().toLowerCase();
+        if (!seenNames.has(key)) { seenNames.add(key); uniqueProducts.push(p); }
+      }
+      S.products = uniqueProducts;
+
+      const j = { version: 1, updated: new Date().toISOString(), categories: S.cats, products: S.products };
+      await gh.writeFile(CATALOG_PATH, JSON.stringify(j, null, 2), pendingMsg);
+
+      S.logs.unshift({ time: new Date().toISOString(), user: CURRENT_ROLE, username: CURRENT_USER, action: pendingMsg });
+      if (S.logs.length > 100) S.logs = S.logs.slice(0, 100);
+
+      toast('Published (duplicates removed). Live site updates in ~30s.');
+      syncEl.textContent = 'Live on your website';
+      setTimeout(() => { syncEl.hidden = true; }, 3000);
+
+      if (S.view === 'products' || S.view === 'logs') render();
+
+    } catch (e) {
+      toast('Could not publish: ' + e.message);
+      syncEl.hidden = true;
+    }
+  }, 60000);
+}
+
+/* ----------------------------- RENDER ----------------------------- */
+const kesF = n => 'KSh ' + Number(n).toLocaleString('en-KE');
+const title = { overview: 'Overview', products: 'Products', settings: 'Settings', logs: 'Activity Log', users: 'User Management' };
+const view = $('#view');
+
 function render() {
-  const v = V[location.hash.slice(1)] && !['orows', 'srows'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
-  $('#title').textContent = TITLES[v]; $$('.rail [data-v]').forEach(a => a.dataset.v === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
-  view.classList.remove('view'); void view.offsetWidth; view.classList.add('view'); view.innerHTML = V[v](); badge();
-}
-function access() {
-  const u = Auth.current();
-  if (u && u.role !== 'customer') { gate.hidden = true; shell.hidden = false; render(); return; }
-  shell.hidden = true; gate.hidden = false;
-  gate.innerHTML = `<div class="glass card" style="max-width:460px;text-align:center;padding:40px"><span class="ico" style="--h:var(--teal);margin:0 auto 18px">${ic(u ? 'shield-check' : 'lock')}</span><h1 style="font-size:28px;margin-bottom:10px">${u ? 'Staff only' : 'Staff console'}</h1><p class="sub2" style="color:var(--mute);margin-bottom:22px">${u ? 'Your account does not have staff access. Ask the owner to change your role.' : 'Sign in to continue. The first account created on this device becomes the owner.'}</p><div class="btns" style="justify-content:center">${u ? '<button class="btn" data-a="signout" type="button">Sign out</button>' : '<button class="btn p" data-a="gin" type="button">Sign in</button><button class="btn" data-a="gup" type="button">Create account</button>'}<a class="btn" href="index.html">Back to site</a></div></div>`;
-}
-document.addEventListener('auth', access); addEventListener('hashchange', () => !shell.hidden && render());
+  const role = CURRENT_ROLE;
+  const rail = $('.rail');
 
-/* forms in modals */
-const field = (id, l, t = 'text', extra = '') => `<div class="fld"><label for="m-${id}">${l}</label><input id="m-${id}" name="${id}" type="${t}" ${extra}></div>`;
-const sel = (id, l, opts) => `<div class="fld"><label for="m-${id}">${l}</label><select id="m-${id}" name="${id}">${opts.map(o => `<option>${o}</option>`).join('')}</select></div>`;
-const bad = (f, id, msg) => { const w = f.elements[id].closest('.fld'); w.classList.add('err'); w.insertAdjacentHTML('beforeend', `<span class="ferr" role="alert">${msg}</span>`); f.elements[id].focus(); };
-const clear = f => { $$('.ferr', f).forEach(x => x.remove()); $$('.err', f).forEach(x => x.classList.remove('err')); };
-function form(title, body, cta, onOk) {
-  const m = modal(`<button class="ib x-btn" data-close aria-label="Close">${ic('x')}</button><h2>${title}</h2><form novalidate style="margin-top:16px">${body}<button class="btn p" style="width:100%" type="submit">${cta}</button></form>`);
-  const f = $('form', m.el); f.addEventListener('submit', e => { e.preventDefault(); clear(f); if (onOk(Object.fromEntries(new FormData(f)), f) !== false) m.close(); });
+  if ((role === 'admin' || role === 'site') && !$('#log-nav')) {
+    const a = document.createElement('a');
+    a.id = 'log-nav';
+    a.href = '#logs';
+    a.dataset.v = 'logs';
+    a.innerHTML = `${ic('list')}<span class="t">Activity Log</span>`;
+    rail.insertBefore(a, $('.back'));
+  }
+
+  if (role === 'admin' && !$('#users-nav')) {
+    const a = document.createElement('a');
+    a.id = 'users-nav';
+    a.href = '#users';
+    a.dataset.v = 'users';
+    a.innerHTML = `${ic('users')}<span class="t">User Management</span>`;
+    rail.insertBefore(a, $('.back'));
+  }
+
+  $('#title').textContent = title[S.view] || 'Overview';
+  $$('.rail [data-v]').forEach(a => a.dataset.v === S.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
+  view.classList.remove('view'); void view.offsetWidth; view.classList.add('view');
+
+  if (S.view === 'logs') view.innerHTML = viewLogs();
+  else if (S.view === 'users') view.innerHTML = viewUsers();
+  else if (S.view === 'products') view.innerHTML = viewProducts();
+  else if (S.view === 'settings') view.innerHTML = viewSettings();
+  else view.innerHTML = viewOverview();
+
+  hydrate(view);
 }
 
-/* actions */
+function viewOverview() {
+  const role = CURRENT_ROLE;
+  const total = S.products.length;
+  const low = S.products.filter(p => p.qty <= (p.min ?? 2));
+  const featured = S.products.filter(p => p.featured).length;
+
+  let totalCost = 0;
+  S.products.forEach(p => {
+    const val = p.cost ? p.cost : eff(p);
+    totalCost += (val * p.qty);
+  });
+
+  if (role === 'admin' || role === 'site') {
+    return `<div class="dash">
+      <article class="glass card s3" style="background:linear-gradient(135deg, rgba(59,116,255,0.15), transparent)"><div class="hd"><h2>Products</h2></div><b style="font:700 34px var(--fd);letter-spacing:-.03em">${total}</b><p class="hint">in the shop</p></article>
+      <article class="glass card s3" style="background:linear-gradient(135deg, rgba(34,211,197,0.15), transparent)"><div class="hd"><h2>Stock Value</h2></div><b style="font:700 34px var(--fd);letter-spacing:-.03em">${kesF(totalCost)}</b><p class="hint">at cost/selling</p></article>
+      <article class="glass card s3" style="background:linear-gradient(135deg, rgba(255,122,61,0.15), transparent)"><div class="hd"><h2>Featured</h2></div><b style="font:700 34px var(--fd);letter-spacing:-.03em">${featured}</b><p class="hint">shown on home</p></article>
+      <article class="glass card s3" style="background:linear-gradient(135deg, rgba(232,97,60,0.15), transparent)"><div class="hd"><h2>Low stock</h2></div><b style="font:700 34px var(--fd);letter-spacing:-.03em;color:var(--err)">${low.length}</b><p class="hint">need restocking</p></article>
+
+      <article class="glass card s6"><div class="hd"><h2>⚠️ Low Stock Alerts</h2></div>
+        <ul class="list">
+          ${low.length ? low.map(p => `<li><div><b>${esc(p.name)}</b><small>${p.qty} left, alert at ${p.min ?? 2}</small></div><span class="st d end">Reorder</span></li>`).join('') : '<li>All stock levels are healthy.</li>'}
+        </ul>
+      </article>
+
+      <article class="glass card s6"><div class="hd"><h2>Recent Activity</h2><a class="btn sm" href="#logs">View all</a></div>
+        <ul class="list">
+          ${S.logs.length ? S.logs.slice(0, 5).map(l => `<li><div><b>${esc(l.action)}</b><small>${esc(l.user.toUpperCase())} · ${new Date(l.time).toLocaleString()}</small></div></li>`).join('') : '<li>No recent activity.</li>'}
+        </ul>
+      </article>
+
+      <article class="glass card s12"><div class="hd"><h2>Quick start</h2><button class="btn p sm" type="button" data-a="pnew">${ic('plus')}Add product</button></div>
+        <ol class="steps">
+          <li>Tap <b>Add product</b>, pick a category, fill in the details.</li>
+          <li>Drop photos — they resize and upload to your GitHub repo automatically.</li>
+          <li>Press Save. The console automatically removes exact duplicates.</li>
+          <li>Your product is live at <b>99computers.co.ke</b>.</li>
+        </ol>
+      </article>
+    </div>`;
+  }
+
+  return `<div class="dash">
+    <article class="glass card s4"><div class="hd"><h2>Products</h2></div><b style="font:700 34px var(--fd);letter-spacing:-.03em">${total}</b><p class="hint">in the shop</p></article>
+    <article class="glass card s4"><div class="hd"><h2>Featured</h2></div><b style="font:700 34px var(--fd);letter-spacing:-.03em">${featured}</b><p class="hint">shown on home</p></article>
+    <article class="glass card s4"><div class="hd"><h2>Low stock</h2></div><b style="font:700 34px var(--fd);letter-spacing:-.03em">${low.length}</b><p class="hint">need restocking</p></article>
+    <article class="glass card s12"><div class="hd"><h2>Quick start</h2><button class="btn p sm" type="button" data-a="pnew">${ic('plus')}Add product</button></div>
+      <ol class="steps">
+        <li>Tap <b>Add product</b>, pick a category, fill in the details.</li>
+        <li>Drop photos — they resize and upload to your GitHub repo automatically.</li>
+        <li>Press Save. The console automatically removes exact duplicates.</li>
+        <li>Your product is live at <b>99computers.co.ke</b>.</li>
+      </ol>
+    </article>
+  </div>`;
+}
+
+function viewUsers() {
+  return `<div class="glass card">
+    <div class="hd"><h2>Account management</h2></div>
+    <p class="hint">Passwords are never displayed or stored in this browser. Manage staff credentials in your deployment environment instead.</p>
+    <div class="dash" style="margin-top:18px">
+      <article class="glass card s12"><h3>Vercel environment variables</h3>
+        <p class="hint">Set credentials under Project → Settings → Environment Variables, then redeploy. Use unique, strong passwords and do not put them in source files.</p>
+        <ul class="list">
+          <li><div><b>Administrator</b><small>ADMIN_USERNAME and ADMIN_PASSWORD</small></div></li>
+          <li><div><b>Site owner (optional)</b><small>SITE_USERNAME and SITE_PASSWORD</small></div></li>
+          <li><div><b>Staff (optional)</b><small>STAFF_USERNAME and STAFF_PASSWORD</small></div></li>
+          <li><div><b>Session signing key</b><small>SESSION_SECRET — at least 32 random characters</small></div></li>
+        </ul>
+      </article>
+      <article class="glass card s12"><h3>Session security</h3><p class="hint">Sessions expire after 8 hours. Sign out on shared devices. Changing an account password in Vercel and redeploying is the supported way to rotate credentials.</p></article>
+    </div>
+  </div>`;
+}
+
+function viewProducts() {
+  return `<div class="glass card"><div class="tools">
+    <label class="srch">${ic('search')}<input id="pq" type="search" placeholder="Search products" aria-label="Search products"></label>
+    <select class="sel" id="pc" aria-label="Category"><option value="All">All categories</option>${[...new Set([...BASE_CATS, ...S.cats.map(c=>c.name), ...S.products.map(p => p.cat)])].map(c => `<option>${esc(c)}</option>`).join('')}</select>
+    <button class="btn p sm" data-a="pnew" type="button" style="margin-left:auto">${ic('plus')}Add product</button>
+  </div>
+  <div class="tw"><table><thead><tr><th></th><th>Product</th><th>Category</th><th>Price</th><th>Qty</th><th></th></tr></thead><tbody id="ptb">${rows()}</tbody></table></div>
+  ${S.products.length ? '' : '<div class="empty">No products yet. Tap Add product to create your first one.</div>'}
+  </div>`;
+}
+
+function viewLogs() {
+  const filter = $('#log-filter')?.value || 'All';
+  const filtered = S.logs.filter(l => filter === 'All' || l.user === filter);
+
+  return `<div class="glass card">
+    <div class="hd">
+      <h2>Activity Log</h2>
+      <select class="sel" id="log-filter" aria-label="Filter by user">
+        <option value="All"${filter === 'All' ? ' selected' : ''}>All Users</option>
+        <option value="admin"${filter === 'admin' ? ' selected' : ''}>Admin</option>
+        <option value="site"${filter === 'site' ? ' selected' : ''}>Site Owner</option>
+        <option value="staff"${filter === 'staff' ? ' selected' : ''}>Staff</option>
+      </select>
+    </div>
+    <ul class="list">
+      ${filtered.length ? filtered.map(l => `
+        <li>
+          <div><b>${esc(l.user.toUpperCase())}</b> - ${new Date(l.time).toLocaleString()}</div>
+          <span class="st b end">${esc(l.action)}</span>
+        </li>
+      `).join('') : '<li>No activity yet.</li>'}
+    </ul>
+  </div>`;
+}
+
+function rows() {
+  const q = ($('#pq')?.value || '').toLowerCase();
+  const c = $('#pc')?.value || 'All';
+  return S.products.filter(p => (c === 'All' || p.cat === c) && (!q || (p.name + p.cat + (p.brand || '')).toLowerCase().includes(q))).map(p => `
+    <tr><td>${p.images && p.images[0] ? `<img class="thumbimg" src="${esc(p.images[0])}" alt="" loading="lazy" onerror="this.style.display='none'">` : `<span class="thumbimg">${ic(CATICON[p.cat] || 'package')}</span>`}</td>
+      <td><b>${esc(p.name)}</b>${p.featured ? ' <span style="color:var(--sig-t)">'+ic('star')+'</span>' : ''}<small style="display:block;color:var(--mute)">${esc(p.brand || '')}</small></td>
+      <td>${esc(p.cat)}</td>
+      <td>${kesF(eff(p))}${p.sale ? `<small style="display:block;color:var(--sig-t)">was ${kesF(p.price)}</small>` : ''}</td>
+      <td>${p.qty}</td>
+      <td style="white-space:nowrap"><button class="ab" data-a="pedit" data-id="${esc(p.id)}" aria-label="Edit">${ic('pencil')}</button> <button class="ab" data-a="pdel" data-id="${esc(p.id)}" aria-label="Delete">${ic('trash')}</button></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">No products match.</td></tr>';
+}
+
+function viewSettings() {
+  const role = CURRENT_ROLE;
+
+  if (role === 'staff') {
+    return `<div class="glass card" style="text-align:center;padding:60px">
+      <span class="ico" style="--h:var(--err);margin:0 auto 20px">${ic('lock')}</span>
+      <h2>Access Restricted</h2>
+      <p class="hint">Only management can access the settings and security controls.</p>
+    </div>`;
+  }
+
+  if (role === 'site') {
+    return `<div class="dash">
+      <article class="glass card s12"><div class="hd"><h2>Data Export</h2></div>
+        <p class="hint">Download your inventory for accounting or backup.</p>
+        <div class="btns" style="margin-top:14px">
+          <button class="btn" type="button" data-a="export">${ic('download')}Download JSON Backup</button>
+          <button class="btn" type="button" data-a="csv">${ic('download')}Download Excel/CSV</button>
+        </div>
+      </article>
+    </div>`;
+  }
+
+  return `<div class="dash">
+    <article class="glass card s12" style="border-color:var(--err)"><div class="hd"><h2 style="color:var(--err)">🚨 Danger Zone</h2></div>
+      <p class="hint">If a mistake was made, you can instantly restore the catalog to the state it was in right before the last save.</p>
+      <div class="btns" style="margin-top:14px">
+        <button class="btn" type="button" data-a="panic" style="background:var(--err);color:#fff;border:0">${ic('refresh')}Restore Previous Version</button>
+      </div>
+    </article>
+
+    <article class="glass card s12"><div class="hd"><h2>Restore / Import</h2></div>
+      <p class="hint">Paste a saved catalog.json backup here to overwrite the live data.</p>
+      <div class="fld" style="margin-top:14px"><textarea id="restore-data" placeholder='Paste your backup JSON here...' style="height:120px;font-family:monospace;font-size:12px"></textarea></div>
+      <div class="btns"><button class="btn p" type="button" data-a="restore">Restore from File</button></div>
+    </article>
+
+    <article class="glass card s12"><div class="hd"><h2>Data Export</h2></div>
+      <div class="btns" style="margin-top:14px">
+        <button class="btn" type="button" data-a="export">${ic('download')}Download JSON Backup</button>
+        <button class="btn" type="button" data-a="csv">${ic('download')}Download Excel/CSV</button>
+      </div>
+    </article>
+  </div>`;
+}
+
+function productForm(p) {
+  const isNew = !p;
+  p = p || { id: 'p-' + Date.now().toString(36), name: '', cat: '', brand: '', price: '', cost: '', sale: '', qty: 1, min: 2, desc: '', featured: false, images: [], specs: [], created: Date.now() };
+  let imgs = [...(p.images || [])];
+  const specRow = (l = '', v = '') => `<div class="sprow"><input placeholder="Name, e.g. Processor" value="${esc(l)}"><input placeholder="Value, e.g. Intel Core i5" value="${esc(v)}"><button class="ab" type="button" data-p="sprm">${ic('x')}</button></div>`;
+
+  const currentCats = [...new Set([...BASE_CATS, ...S.cats.map(c=>c.name)])].sort();
+  const catOpts = currentCats.map(c => `<option value="${esc(c)}"${c === p.cat ? ' selected' : ''}>${esc(c)}</option>`).join('');
+
+  const m = modal(`<button class="ib x-btn" data-close aria-label="Close">${ic('x')}</button><h2>${isNew ? 'Add product' : 'Edit product'}</h2>
+  <form novalidate class="pform" style="margin-top:18px">
+    <div><h3>Photos</h3><div class="up" id="up"><input type="file" id="pfile" accept="image/*" multiple hidden><button class="btn sm" type="button" data-p="pick">${ic('photo')}Add photos</button><p class="hint" style="margin-top:8px">Up to 6. Resized and uploaded automatically.</p><div class="tg" id="tg"></div></div></div>
+    <div>
+      <div class="fld"><label for="m-name">Name</label><input id="m-name" name="name" value="${esc(p.name)}"></div>
+      <div class="row2"><div class="fld"><label for="m-cat">Category</label><select id="m-cat" name="cat" required><option value="" disabled${!p.cat ? ' selected' : ''}>Select category...</option>${catOpts}<option value="__new">+ Add new category...</option></select><input type="text" id="m-newcat" name="newcat" placeholder="Type new category name" style="display:none; margin-top:8px"></div><div class="fld"><label for="m-brand">Brand (optional)</label><input id="m-brand" name="brand" value="${esc(p.brand || '')}"></div></div>
+      <div class="row2"><div class="fld"><label for="m-price">Selling Price (KSh)</label><input id="m-price" name="price" type="number" min="1" value="${p.price}"></div><div class="fld"><label for="m-sale">Sale price (optional)</label><input id="m-sale" name="sale" type="number" min="1" value="${p.sale || ''}"></div></div>
+      <div class="row2"><div class="fld"><label for="m-cost">Cost Price (optional)</label><input id="m-cost" name="cost" type="number" min="0" value="${p.cost || ''}"></div><div class="fld"><label for="m-qty">Quantity in stock</label><input id="m-qty" name="qty" type="number" min="0" value="${p.qty}"></div></div>
+      <div class="row2"><div class="fld"><label for="m-min">Low-stock alert at</label><input id="m-min" name="min" type="number" min="0" value="${p.min ?? 2}"></div><div></div></div>
+      <div class="fld"><label for="m-desc">Description</label><textarea id="m-desc" name="desc">${esc(p.desc || '')}</textarea></div>
+      <label class="chk"><input type="checkbox" name="featured" ${p.featured ? 'checked' : ''}>Show on the home page as featured</label>
+      <h3>Specifications</h3><div id="specs">${(p.specs || []).map(s => specRow(s[0], s[1])).join('')}</div>
+      <div class="btns" style="margin:4px 0 20px"><button class="btn sm" type="button" data-p="spadd">${ic('plus')}Add specification</button></div>
+      <button class="btn p" style="width:100%" type="submit">${isNew ? 'Save product' : 'Save changes'}</button>
+    </div>
+  </form>`, 'xl');
+
+  const f = $('form', m.el), specs = $('#specs', m.el);
+
+  const catSel = f.elements.cat, newCatInput = $('#m-newcat', m.el);
+  catSel.addEventListener('change', () => {
+    if (catSel.value === '__new') {
+      newCatInput.style.display = 'block';
+      newCatInput.focus();
+    } else {
+      newCatInput.style.display = 'none';
+      newCatInput.value = '';
+    }
+  });
+  if (p.cat === '__new' || (!p.cat && isNew)) {
+    if (isNew) { catSel.value = '__new'; newCatInput.style.display = 'block'; }
+  }
+
+  const draw = () => { $('#tg', m.el).innerHTML = imgs.map((r, i) => `<div class="tn"><img src="${esc(r)}" alt=""><span class="mk">${i === 0 ? 'Main' : 'Photo ' + (i + 1)}</span><span class="tb"><button type="button" class="mini" data-p="rm" data-i="${i}">Remove</button></span></div>`).join(''); };
+  draw();
+
+  f.addEventListener('click', async e => {
+    const b = e.target.closest('[data-p]'); if (!b) return;
+    const k = b.dataset.p, i = +b.dataset.i;
+    if (k === 'pick') $('#pfile', m.el).click();
+    else if (k === 'spadd') { specs.insertAdjacentHTML('beforeend', specRow()); specs.lastElementChild.querySelector('input').focus(); }
+    else if (k === 'sprm') b.closest('.sprow').remove();
+    else if (k === 'rm') { imgs.splice(i, 1); draw(); }
+  });
+
+  $('#pfile', m.el).addEventListener('change', async e => {
+    const files = [...e.target.files]; e.target.value = '';
+    for (const file of files) {
+      if (imgs.length >= 6) { toast('Up to 6 photos'); break; }
+      try {
+        toast('Compressing ' + file.name);
+        const b64 = await compress(file);
+        const baseName = p.id + '-' + (imgs.length + 1) + '-' + Date.now().toString(36) + '.jpg';
+        const repoPath = IMAGES_DIR + '/' + baseName;
+        const publicPath = '/' + repoPath;
+        toast('Uploading to GitHub...');
+        await gh.writeBinary(repoPath, b64, 'Add product photo: ' + file.name);
+        imgs.push(publicPath);
+        draw();
+      } catch (err) { toast('Upload failed: ' + err.message); }
+    }
+    toast('Photos ready');
+  });
+
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f));
+    if (d.name.trim().length < 2) { toast('Enter a name'); return; }
+    if (!d.cat || d.cat === '__new') {
+      if (!d.newcat || d.newcat.trim().length < 2) { toast('Enter a category'); return; }
+      d.cat = d.newcat.trim();
+      if (!S.cats.some(c => c.name.toLowerCase() === d.cat.toLowerCase())) {
+        S.cats.push({ name: d.cat, specs: [] });
+      }
+    }
+    if (!(+d.price > 0)) { toast('Enter a price above zero'); return; }
+    if (d.sale && !(+d.sale > 0 && +d.sale < +d.price)) { toast('Sale must be below the price'); return; }
+    const sps = $$('.sprow', specs).map(r => { const inp = $$('input', r); return [inp[0].value.trim(), inp[1].value.trim()]; }).filter(s => s[0] && s[1]);
+    const np = { ...p, name: d.name.trim(), cat: d.cat, brand: d.brand.trim(), price: +d.price, cost: d.cost ? +d.cost : null, sale: d.sale ? +d.sale : null, qty: Math.max(0, +d.qty || 0), min: Math.max(0, +d.min || 0), desc: d.desc.trim(), featured: !!d.featured, images: imgs, specs: sps, created: p.created || Date.now() };
+
+    if (isNew) S.products.unshift(np); else S.products = S.products.map(x => x.id === p.id ? np : x);
+    queueSave((isNew ? 'Added product: ' : 'Updated product: ') + np.name);
+    m.close();
+    render();
+  });
+}
+
+/* ---------------------------- ACTIONS ---------------------------- */
 const A = {
-  gin: () => openAuth('in', { noFocus: false }), gup: () => openAuth('up'), signout() { Auth.signOut(); toast('Signed out'); },
-  paid(el) { set('orders', get('orders').map(x => x.id === el.dataset.id ? { ...x, pay: 'Paid' } : x)); $('#tb').innerHTML = V.orows(); toast('Marked as paid'); },
-  odel(el) { if (confirm('Delete order #' + el.dataset.id + '?')) { set('orders', get('orders').filter(x => x.id !== el.dataset.id)); $('#tb').innerHTML = V.orows(); toast('Order deleted'); } },
-  onew() {
-    form('New order', field('customer', 'Customer') + field('item', 'Item or service') + `<div class="row2">${sel('branch', 'Branch', BRANCHES)}${field('amount', 'Amount (KSh)', 'number', 'min="1" inputmode="numeric"')}</div>` + sel('pay', 'Payment', ['Due', 'Paid']), 'Add order', (d, f) => {
-      if (d.customer.trim().length < 2) return bad(f, 'customer', 'Enter the customer name'), false; if (d.item.trim().length < 2) return bad(f, 'item', 'Describe the item or service'), false; if (!(+d.amount > 0)) return bad(f, 'amount', 'Enter an amount above zero'), false;
-      let id; do { id = String(10000 + Math.random() * 89999 | 0); } while (get('orders').some(x => x.id === id));
-      set('orders', [{ id, customer: d.customer.trim(), item: d.item.trim(), branch: d.branch, amount: +d.amount, pay: d.pay, status: 'Pending', date: Date.now() }, ...get('orders')]); render(); toast('Order #' + id + ' added');
-    });
+  pnew() { productForm(null); },
+  pedit(el) { productForm(S.products.find(x => x.id === el.dataset.id)); },
+  async pdel(el) {
+    const p = S.products.find(x => x.id === el.dataset.id);
+    if (!p || !confirm('Delete "' + p.name + '"?')) return;
+    S.products = S.products.filter(x => x.id !== p.id);
+    queueSave('Deleted product: ' + p.name);
+    render();
+    toast('Deleted');
   },
-  range(el) { S.range = el.dataset.r; render(); }, tf(el) { S.tf = el.dataset.f; render(); }, tsel(el) { S.tid = el.dataset.id; render(); },
-  tclose(el) { set('tickets', get('tickets').map(t => t.id === el.dataset.id ? { ...t, status: t.status === 'Open' ? 'Closed' : 'Open' } : t)); render(); },
-  'q+'(el) { stockQ(el, 1); }, 'q-'(el) { stockQ(el, -1); },
-  sdel(el) { if (confirm('Delete this stock item?')) { set('stock', get('stock').filter(s => s.sku !== el.dataset.id)); $('#tb').innerHTML = V.srows(); } },
-  snew() {
-    form('Add stock item', field('sku', 'SKU') + field('name', 'Item name') + `<div class="row2">${field('cat', 'Category')}${field('price', 'Price (KSh)', 'number', 'min="0"')}</div><div class="row2">${field('qty', 'Quantity', 'number', 'min="0"')}${field('min', 'Minimum level', 'number', 'min="0"')}</div>`, 'Add item', (d, f) => {
-      if (!d.sku.trim()) return bad(f, 'sku', 'Enter a SKU'), false; if (get('stock').some(s => s.sku.toLowerCase() === d.sku.trim().toLowerCase())) return bad(f, 'sku', 'That SKU already exists'), false; if (!d.name.trim()) return bad(f, 'name', 'Enter the item name'), false; if (!(+d.price >= 0) || d.price === '') return bad(f, 'price', 'Enter a price'), false;
-      set('stock', [...get('stock'), { sku: d.sku.trim(), name: d.name.trim(), cat: d.cat.trim() || 'General', qty: +d.qty || 0, min: +d.min || 0, price: +d.price }]); $('#tb').innerHTML = V.srows(); toast('Item added');
-    });
+  async panic() {
+    if (!confirm('Restore the catalog to the previous version? This will overwrite current products.')) return;
+    try {
+      const prev = await gh.readPreviousFile(CATALOG_PATH);
+      if (!prev) throw Error('No previous version found');
+      await gh.writeFile(CATALOG_PATH, prev.content, 'PANIC: Restore previous version');
+      toast('Previous version restored!');
+      setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+      toast('Restore failed: ' + e.message);
+    }
   },
-  export() { const b = new Blob([JSON.stringify({ orders: get('orders'), stock: get('stock'), customers: get('customers'), tickets: get('tickets') }, null, 2)], { type: 'application/json' }), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = '99computers-data.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); },
-  reset() { if (confirm('Reset orders, stock, customers and tickets to the demo data?')) { set('tickets', []); SEED(); render(); toast('Demo data restored'); } }
+  async restore() {
+    const raw = $('#restore-data').value.trim();
+    if (!raw) { toast('Paste the backup JSON first'); return; }
+    try {
+      const j = JSON.parse(raw);
+      if (!j.products || !Array.isArray(j.products)) throw Error('Invalid format');
+      S.products = j.products;
+      S.cats = j.categories || [];
+      await gh.writeFile(CATALOG_PATH, JSON.stringify(j, null, 2), 'Restore catalog from backup');
+      toast('Restored successfully!');
+      render();
+    } catch (e) {
+      toast('Restore failed: ' + e.message);
+    }
+  },
+  async csv() {
+    const headers = ['Name', 'Category', 'Brand', 'Cost', 'Price', 'Sale', 'Qty', 'Min'];
+    const rows = S.products.map(p => [
+      `"${(p.name || '').replace(/"/g, '""')}"`,
+      `"${(p.cat || '').replace(/"/g, '""')}"`,
+      `"${(p.brand || '').replace(/"/g, '""')}"`,
+      p.cost || '',
+      p.price || '',
+      p.sale || '',
+      p.qty || 0,
+      p.min || 0
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'inventory.csv'; a.click();
+  },
+  export() { const b = new Blob([JSON.stringify({ products: S.products, categories: S.cats }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'catalog-backup.json'; a.click(); }
 };
-function stockQ(el, d) { set('stock', get('stock').map(s => s.sku === el.dataset.id ? { ...s, qty: Math.max(0, s.qty + d) } : s)); $('#tb').innerHTML = V.srows(); }
-document.addEventListener('click', e => { const el = e.target.closest('[data-a]'); if (el && el.tagName !== 'SELECT' && A[el.dataset.a]) A[el.dataset.a](el); });
-document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('li[data-a]')) { e.preventDefault(); A[e.target.dataset.a](e.target); } });
+document.addEventListener('click', e => { const el = e.target.closest('[data-a]'); if (el && A[el.dataset.a]) A[el.dataset.a](el); });
+document.addEventListener('input', e => { if (e.target.id === 'pq') $('#ptb').innerHTML = rows(); });
 document.addEventListener('change', e => {
-  const t = e.target;
-  if (t.id === 'of') { S.of = t.value; $('#tb').innerHTML = V.orows(); }
-  else if (t.dataset.a === 'ost') { set('orders', get('orders').map(x => x.id === t.dataset.id ? { ...x, status: t.value } : x)); toast('Status updated'); }
-  else if (t.dataset.a === 'role') { Auth.update(t.dataset.id, { role: t.value }); toast('Role updated'); }
+  if (e.target.id === 'pc') $('#ptb').innerHTML = rows();
+  if (e.target.id === 'log-filter') render();
 });
-document.addEventListener('input', e => { if (e.target.id === 'oq') { S.oq = e.target.value; $('#tb').innerHTML = V.orows(); } if (e.target.id === 'sq') { S.sq = e.target.value; $('#tb').innerHTML = V.srows(); } });
-document.addEventListener('submit', e => {
-  const f = e.target;
-  if (f.id === 'rf') { e.preventDefault(); const txt = f.elements.text.value.trim(); if (!txt) { clear(f); bad(f, 'text', 'Write a reply first'); return; } const u = Auth.current(); set('tickets', get('tickets').map(t => t.id === S.tid ? { ...t, thread: [...t.thread, { from: u.name + ' (staff)', me: true, text: txt, at: Date.now() }] } : t)); render(); toast('Reply saved'); }
-  if (f.id === 'pf') { e.preventDefault(); clear(f); const n = f.elements.name.value.trim(), p = f.elements.phone.value.replace(/\s/g, ''); if (n.length < 2) return bad(f, 'name', 'Enter your name'); if (!/^(\+?254|0)[17]\d{8}$/.test(p)) return bad(f, 'phone', 'Enter a Kenyan mobile number'); Auth.update(Auth.current().id, { name: n, phone: p.replace(/^0/, '+254').replace(/^254/, '+254') }); toast('Profile saved'); }
+addEventListener('hashchange', () => { S.view = (location.hash.slice(1) || 'overview'); render(); });
+
+const logoutBtn = $('#logoutBtn');
+if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+  logoutBtn.disabled = true;
+  try { await fetch('/api/auth', { method: 'DELETE', credentials: 'same-origin', cache: 'no-store' }); } catch (e) {}
+  DB.set(ROLE_KEY, null);
+  CURRENT_ROLE = 'staff'; CURRENT_USER = '';
+  location.reload();
 });
-access();
+
+(async () => {
+  let ok = false;
+  try { ok = await gate(); } catch (e) { toast('Unable to initialize secure sign-in.'); return; }
+  if (!ok) return;
+  document.getElementById('gate').hidden = true;
+  document.getElementById('shell').hidden = false;
+  S.view = location.hash.slice(1) || 'overview';
+  try { await loadCatalog(); } catch (e) { toast(e.message); }
+  render();
+})();
 })();
