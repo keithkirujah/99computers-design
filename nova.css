@@ -276,3 +276,243 @@ body[data-page="site"]:not(.routed)::after{content:"";position:fixed;top:50%;lef
 /* ===== v5: auto-cycling product images ===== */
 .pimg.multi img { position: absolute; inset: 0; opacity: 0; transition: opacity 0.6s ease-in-out; }
 .pimg.multi img.active { opacity: 1; }
+/* ============================================================
+   NOVA SPEED + CRAZY DESIGN LAYER
+   Lightning performance + bold premium visual upgrades
+   ============================================================ */
+
+/* --- Performance: reduce expensive blur on mobile / reduced motion --- */
+@media (max-width: 900px) {
+  :root { --blur: 14px; }
+  .glass {
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+    backdrop-filter: blur(14px) saturate(150%);
+  }
+  .btn {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora i { animation: none !important; opacity: .55; }
+  .glass::after { display: none !important; }
+  .pc, .prod, .btn, .glass.hv { transition: none !important; }
+  * { scroll-behavior: auto !important; }
+}
+
+/* Pause aurora when page is hidden (saves battery/CPU) */
+@media (prefers-reduced-motion: no-preference) {
+  body:not(.visible) .aurora i { animation-play-state: paused; }
+}
+
+/* --- Bolder design tokens --- */
+:root {
+  --glow: 0 0 40px -8px rgba(255,122,61,.55);
+  --glow-teal: 0 0 36px -8px rgba(34,211,197,.45);
+  --card-lift: translateY(-6px) scale(1.015);
+}
+
+/* Gradient text on key headings */
+h1[data-words],
+h2 em {
+  background: linear-gradient(120deg, var(--sig-t) 0%, #ffd0a8 35%, var(--teal) 70%, var(--blue) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradientShift 8s ease infinite alternate;
+}
+@keyframes gradientShift {
+  to { background-position: 100% center; }
+}
+[data-theme=light] h1[data-words],
+[data-theme=light] h2 em {
+  background: linear-gradient(120deg, #c2410c 0%, #ea580c 40%, #0e9f95 70%, #2457e6 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Stronger product cards */
+.pc {
+  transition: transform .35s var(--spring), box-shadow .35s var(--ease), border-color .25s;
+  will-change: transform;
+}
+@media (hover:hover) {
+  .pc:hover {
+    transform: var(--card-lift);
+    box-shadow: var(--gls), var(--glow);
+    border-color: rgba(255,122,61,.45);
+  }
+  .pc:hover .pimg img.active {
+    transform: scale(1.06);
+  }
+  .prod:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--gls), var(--glow-teal);
+  }
+}
+.pimg {
+  overflow: hidden;
+  transition: transform .5s var(--ease);
+}
+.pimg img {
+  transition: transform .6s var(--ease), opacity .5s ease;
+}
+
+/* Primary button gets a living glow */
+.btn.p {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 12px 28px -10px rgba(255,122,61,.75), 0 0 0 0 rgba(255,122,61,.4);
+  transition: transform .25s var(--spring), background .2s, box-shadow .35s;
+}
+@media (hover:hover) {
+  .btn.p:hover {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 16px 36px -8px rgba(255,122,61,.9), 0 0 24px 2px rgba(255,122,61,.35);
+  }
+}
+.btn.p::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.25) 50%, transparent 60%);
+  transform: translateX(-120%);
+  transition: transform .6s var(--ease);
+}
+@media (hover:hover) {
+  .btn.p:hover::after { transform: translateX(120%); }
+}
+
+/* Hero visual punch */
+.hero .copy h1 {
+  font-size: clamp(42px, 7.5vw, 78px);
+  letter-spacing: -.04em;
+  line-height: 1.02;
+  margin-bottom: 12px;
+}
+.hero .tag {
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--teal);
+  text-transform: uppercase;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.hero .lead {
+  font-size: clamp(16px, 1.6vw, 19px);
+  max-width: 42ch;
+}
+
+/* Stats bar more dramatic */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 22px 12px;
+  text-align: center;
+}
+.stats b {
+  font-size: clamp(28px, 4vw, 40px);
+  font-family: var(--fd);
+  background: linear-gradient(180deg, var(--ink), var(--mute));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.stats span {
+  font-size: 13px;
+  color: var(--mute);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* Skeleton loading for product grid (prevents layout jump) */
+.pgrid:empty::before,
+.products:empty::before {
+  content: "";
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+  width: 100%;
+}
+.pgrid:empty::after,
+.products:empty::after {
+  content: "";
+  display: block;
+  height: 280px;
+  border-radius: var(--rc);
+  background: linear-gradient(90deg, var(--fill) 25%, rgba(255,255,255,.08) 50%, var(--fill) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+  grid-column: 1 / -1;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Nav glass more refined */
+.nav.glass {
+  border-radius: 999px;
+  padding: 8px 14px;
+  margin: 14px auto 0;
+  width: min(1180px, calc(100% - 28px));
+  position: sticky;
+  top: 12px;
+  z-index: 80;
+}
+
+/* Category chips more vibrant when active */
+.chips .chip.on,
+.chips button.on {
+  background: var(--sig);
+  color: var(--on);
+  border-color: transparent;
+  box-shadow: 0 8px 20px -8px rgba(255,122,61,.7);
+  font-weight: 700;
+}
+
+/* Smooth content reveal */
+.rv {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity .55s var(--ease), transform .55s var(--ease);
+}
+.rv.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* WhatsApp floating feel on the cluster card */
+.cl-c {
+  position: relative;
+}
+.cl-c::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, #25d366, transparent 50%, #25d366);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: .7;
+  pointer-events: none;
+}
+
+/* Slightly tighter mobile spacing */
+@media (max-width: 640px) {
+  section { padding: 72px 0; }
+  .hero .copy h1 { font-size: clamp(36px, 11vw, 52px); }
+  .stats { padding: 18px 8px; }
+}
+
+/* Content-visibility for offscreen sections (major scroll performance) */
+.pg:not(.on) {
+  content-visibility: auto;
+  contain-intrinsic-size: 800px;
+}

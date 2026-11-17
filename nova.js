@@ -5,6 +5,10 @@ const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [..
 const ic = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.body.classList.add('visible');
+document.addEventListener('visibilitychange', () => {
+  document.body.classList.toggle('visible', !document.hidden);
+});
 
 /* Aurora + inline SVG sprite */
 document.body.insertAdjacentHTML('afterbegin', '<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>');
@@ -137,16 +141,24 @@ function hydrate(rootEl) {
 }
 
 const Catalog = {
+  _cache: null,
+  _fetchedAt: 0,
+  TTL: 90_000, // 90s memory cache — SPA navigations stay instant
+
   async load() {
+    if (this._cache && Date.now() - this._fetchedAt < this.TTL) return this._cache;
     try {
-      // THE FIX: Appended ?v= timestamp forces all browsers to bypass cache and fetch the latest version instantly
-      const r = await fetch('/catalog.json?v=' + Date.now(), { cache: 'no-store' });
+      const r = await fetch('/catalog.json', { cache: 'default' });
       if (r.ok) {
         const j = await r.json();
-        if (j && Array.isArray(j.products)) return { products: j.products, cats: Array.isArray(j.categories) && j.categories.length ? j.categories : null };
+        if (j && Array.isArray(j.products)) {
+          this._cache = { products: j.products, cats: Array.isArray(j.categories) && j.categories.length ? j.categories : null };
+          this._fetchedAt = Date.now();
+          return this._cache;
+        }
       }
     } catch (e) {}
-    return { products: [], cats: null };
+    return this._cache || { products: [], cats: null };
   },
   list(cats, products) {
     const base = cats && cats.length ? cats.map(c => ({ name: c.name, specs: c.specs || [] })) : [];
@@ -294,7 +306,7 @@ if (document.body.dataset.page === 'site') {
         const isIdb = r.startsWith('idb:');
         const src = isIdb ? '' : abs(r);
         const active = idx === 0 ? ' active' : '';
-        return `<img data-ref="${esc(r)}" ${src ? `src="${esc(src)}"` : ''} alt="${esc(p.name)}" class="${active}" ${idx > 0 ? 'loading="lazy"' : ''} decoding="async">`;
+        return `<img data-ref="${esc(r)}" ${src ? `src="${esc(src)}"` : ''} alt="${esc(p.name)}" class="${active}" width="480" height="360" ${idx > 0 ? 'loading="lazy"' : 'fetchpriority="high"'} decoding="async">`;
       }).join('');
     }
 
