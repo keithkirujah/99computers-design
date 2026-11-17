@@ -271,7 +271,7 @@ if (document.body.dataset.page === 'site') {
     ['Sound', 'Sound Systems', 'Speakers, subwoofers, amplifiers, and home audio setups.', '/images/7.jpeg', 'Sound system'],
     ['Accessories', 'Accessories', 'Keyboards, mice, chargers, cables, and everyday essentials.', '/images/8.jpeg', 'Accessories']
   ];
-  $('#tiles').innerHTML = TILES.map((p, i) => `<a class="glass hv prod rv" href="/shop/c/${p[0]}" style="--d:${i * .07}s"><div class="slot sh"><span class="chip">${p[0]}</span><img src="${p[3]}" alt="${p[4]}" loading="lazy" decoding="async" width="480" height="320"></div><div class="meta"><strong>${p[1]}</strong><small>${p[2]}</small></div></a>`).join('');
+  $('#tiles').innerHTML = TILES.map((p, i) => `<a class="glass hv prod rv" href="/shop/c/${p[0]}" style="--d:${i * .07}s"><div class="slot sh"><span class="chip">${p[0]}</span><img src="${p[3]}" alt="${p[4]}" loading="lazy" decoding="async" width="480" height="320" onerror="this.style.display='none';this.parentElement.classList.add('noimg')"></div><div class="meta"><strong>${p[1]}</strong><small>${p[2]}</small></div></a>`).join('');
   $$('.sh img, .fig img, .mos img').forEach(im => { const w = im.closest('.sh, .fig, .ph'), ok = () => { w.classList.add('loaded'); w.classList.remove('sh'); }, bad = () => { w.classList.add('failed'); w.classList.remove('sh'); }; if (im.complete && im.naturalWidth) ok(); else if (im.complete) bad(); else { im.addEventListener('load', ok, { once: true }); im.addEventListener('error', bad, { once: true }); } });
 
   /* shop */
